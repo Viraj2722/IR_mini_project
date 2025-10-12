@@ -647,9 +647,9 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
         st.metric("Avg Doc Length", f"{idx_stats['avg_doc_length']:.1f} terms")
     
     # Main area
-    tab1, tab2, tab3 = st.tabs(["Search", "IR Concepts Explained", "Evaluation"])
+    tabs = st.tabs(["Search"])
     
-    with tab1:
+    with tabs[0]:  # Access the first tab from the list
         st.subheader("Search Interface")
         
         col1, col2 = st.columns([4, 1])
@@ -739,80 +739,6 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
                                 st.markdown("**🎯 Why this document matched (TF-IDF overlap):**")
                                 term_df = pd.DataFrame(terms, columns=["Matching Term", "Relevance Score"])
                                 st.dataframe(term_df, hide_index=True, use_container_width=True)
-    
-    with tab2:
-        st.header("IR Concepts Implemented")
-        
-        st.subheader("1. Vector Space Model")
-        st.write("Documents and queries represented as vectors in term space. Uses TF-IDF weighting and cosine similarity for ranking.")
-        
-        st.subheader("2. Boolean Model")
-        st.write("Exact-match retrieval using Boolean operators: AND (all terms), OR (any term), NOT (exclusion).")
-        
-        st.subheader("3. Inverted Index")
-        st.write("Core data structure mapping terms to document IDs. Enables efficient retrieval.")
-        
-        st.subheader("4. Zone/Parametric Indexing")
-        st.write("Separate indexes for document fields (question/answer). Supports weighted zone scoring.")
-        
-        st.subheader("5. Query Expansion")
-        st.write("Automatic global analysis using WordNet synonyms to improve recall.")
-        
-        st.subheader("6. Rocchio Relevance Feedback")
-        st.write("User feedback (relevant/non-relevant docs) refines query: Q_new = αQ + βDr - γDnr")
-        
-        st.subheader("7. TF-IDF Weighting")
-        st.write("Term Frequency × Inverse Document Frequency. Balances term importance.")
-        
-        st.subheader("8. Text Preprocessing")
-        st.write("Pipeline: Tokenization → Stopword Removal → Lemmatization")
-        
-        st.subheader("9. Evaluation Metrics")
-        st.write("Precision@K, Recall@K, F1-Score, Mean Average Precision (MAP)")
-    
-    with tab3:
-        st.header("System Evaluation")
-        st.info("Evaluation requires ground-truth relevance judgments")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Evaluation Metrics:**")
-            st.write("- **Precision@K:** Proportion of retrieved docs that are relevant")
-            st.write("- **Recall@K:** Proportion of relevant docs that are retrieved")
-            st.write("- **F1@K:** Harmonic mean of Precision and Recall")
-            st.write("- **MAP:** Mean Average Precision across queries")
-        
-        with col2:
-            if st.button("Run Sample Evaluation"):
-                # Create synthetic test queries with ground truth
-                test_queries = [
-                    ("depression symptoms", [0, 1, 2, 5, 6]),
-                    ("anxiety help treatment", [3, 7, 10, 15]),
-                    ("mental health", [0, 1, 8, 12, 14])
-                ]
-                
-                eval_results = evaluate_system(ir_system, test_queries, k=top_k)
-                
-                st.success("Evaluation Complete!")
-                st.metric("Precision@K", f"{eval_results['Precision@K']:.3f}")
-                st.metric("Recall@K", f"{eval_results['Recall@K']:.3f}")
-                st.metric("F1@K", f"{eval_results['F1@K']:.3f}")
-                st.metric("MAP", f"{eval_results['MAP']:.3f}")
-        
-        st.markdown("---")
-        st.subheader("Sample Queries")
-        sample_queries = [
-            "feeling depressed and lonely",
-            "anxiety AND panic attacks",
-            "help NOT medication",
-            "mental health",
-            "stress at work"
-        ]
-        
-        cols = st.columns(len(sample_queries))
-        for col, sample in zip(cols, sample_queries):
-            with col:
-                st.button(sample, key=f"sample_{sample}", use_container_width=True)
 
 # --------------------------- Main ------------------------------------
 
