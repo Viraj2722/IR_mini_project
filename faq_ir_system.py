@@ -885,7 +885,6 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
                         st.session_state.show_refined = True
                     
                     st.success("✅ Rocchio algorithm applied successfully!")
-                    st.balloons()
             else:
                 st.warning("⚠️ Please mark at least one document as relevant or non-relevant.")
             
