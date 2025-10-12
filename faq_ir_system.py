@@ -237,11 +237,14 @@ class QueryExpander:
             return []
         
         synonyms = set()
-        for syn in wn.synsets(word):
-            for lemma in syn.lemmas():
-                synonym = lemma.name().replace('_', ' ').lower()
-                if synonym != word and len(synonyms) < max_synonyms:
-                    synonyms.add(synonym)
+        try:
+            for syn in wn.synsets(word):
+                for lemma in syn.lemmas():
+                    synonym = lemma.name().replace('_', ' ').lower()
+                    if synonym != word and len(synonyms) < max_synonyms:
+                        synonyms.add(synonym)
+        except Exception:
+            pass
         return list(synonyms)
     
     def expand_query(self, query: str, max_expansions: int = 2) -> str:
@@ -249,15 +252,18 @@ class QueryExpander:
         if not self.use_wordnet:
             return query
         
-        tokens = word_tokenize(query.lower())
-        expanded_terms = [query]
-        
-        for token in tokens:
-            if len(token) > 3:
-                synonyms = self.get_synonyms(token, max_synonyms=max_expansions)
-                expanded_terms.extend(synonyms[:max_expansions])
-        
-        return " ".join(expanded_terms)
+        try:
+            tokens = word_tokenize(query.lower())
+            expanded_terms = [query]
+            
+            for token in tokens:
+                if len(token) > 3:
+                    synonyms = self.get_synonyms(token, max_synonyms=max_expansions)
+                    expanded_terms.extend(synonyms[:max_expansions])
+            
+            return " ".join(expanded_terms)
+        except Exception:
+            return query
 
 # --------------------------- Rocchio Feedback ------------------------
 
@@ -278,15 +284,23 @@ class RocchioFeedback:
     def modify_query(self, query_vec: np.ndarray, relevant_docs: List[np.ndarray], 
                      non_relevant_docs: List[np.ndarray]) -> np.ndarray:
         """Apply Rocchio algorithm to modify query vector."""
+        # Ensure query_vec is 1D
+        if query_vec.ndim > 1:
+            query_vec = query_vec.flatten()
+        
         modified = self.alpha * query_vec
         
         if relevant_docs:
-            relevant_centroid = np.mean(relevant_docs, axis=0)
-            modified += self.beta * relevant_centroid
+            # Stack all relevant docs and compute mean along axis 0
+            relevant_stack = np.vstack([doc.flatten() for doc in relevant_docs])
+            relevant_centroid = np.mean(relevant_stack, axis=0)
+            modified = modified + self.beta * relevant_centroid
         
         if non_relevant_docs:
-            non_relevant_centroid = np.mean(non_relevant_docs, axis=0)
-            modified -= self.gamma * non_relevant_centroid
+            # Stack all non-relevant docs and compute mean along axis 0
+            non_relevant_stack = np.vstack([doc.flatten() for doc in non_relevant_docs])
+            non_relevant_centroid = np.mean(non_relevant_stack, axis=0)
+            modified = modified - self.gamma * non_relevant_centroid
         
         return modified
 
@@ -302,9 +316,13 @@ class Preprocessor:
         self.use_nltk = nltk is not None
         if self.use_nltk:
             ensure_nltk_resources()
-            self.stopwords = set(stopwords.words("english"))
-            self.lemmatizer = WordNetLemmatizer()
-        else:
+            try:
+                self.stopwords = set(stopwords.words("english"))
+                self.lemmatizer = WordNetLemmatizer()
+            except Exception:
+                self.use_nltk = False
+        
+        if not self.use_nltk:
             self.stopwords = set([
                 "the", "a", "an", "in", "on", "and", "is", "are", "of",
                 "for", "to", "with", "that", "this", "it", "as", "be"
@@ -313,7 +331,6 @@ class Preprocessor:
         
         self.stats = {
             'original_tokens': 0,
-            'after_lowercase': 0,
             'after_stopwords': 0,
             'after_lemmatization': 0
         }
@@ -324,25 +341,26 @@ class Preprocessor:
             return ""
         
         text = text.lower()
-        if track_stats:
-            self.stats['after_lowercase'] = len(text.split())
-        
         text = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in text)
         
         if self.use_nltk:
-            tokens = word_tokenize(text)
-            if track_stats:
-                self.stats['original_tokens'] = len(tokens)
-            
-            tokens = [t for t in tokens if t not in self.stopwords and t.isalpha() and len(t) > 2]
-            if track_stats:
-                self.stats['after_stopwords'] = len(tokens)
-            
-            tokens = [self.lemmatizer.lemmatize(t) for t in tokens]
-            if track_stats:
-                self.stats['after_lemmatization'] = len(tokens)
-            
-            return " ".join(tokens)
+            try:
+                tokens = word_tokenize(text)
+                if track_stats:
+                    self.stats['original_tokens'] = len(tokens)
+                
+                tokens = [t for t in tokens if t not in self.stopwords and t.isalpha() and len(t) > 2]
+                if track_stats:
+                    self.stats['after_stopwords'] = len(tokens)
+                
+                tokens = [self.lemmatizer.lemmatize(t) for t in tokens]
+                if track_stats:
+                    self.stats['after_lemmatization'] = len(tokens)
+                
+                return " ".join(tokens)
+            except Exception:
+                tokens = [t for t in text.split() if t not in self.stopwords and len(t) > 2]
+                return " ".join(tokens)
         else:
             tokens = [t for t in text.split() if t not in self.stopwords and len(t) > 2]
             return " ".join(tokens)
@@ -601,6 +619,20 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
     Zone Indexing, Query Expansion, Rocchio Feedback, TF-IDF, Evaluation Metrics
     """)
     
+    # Initialize session state
+    if 'current_query' not in st.session_state:
+        st.session_state.current_query = ""
+    if 'current_results' not in st.session_state:
+        st.session_state.current_results = []
+    if 'relevant_docs' not in st.session_state:
+        st.session_state.relevant_docs = []
+    if 'non_relevant_docs' not in st.session_state:
+        st.session_state.non_relevant_docs = []
+    if 'show_refined' not in st.session_state:
+        st.session_state.show_refined = False
+    if 'refined_results' not in st.session_state:
+        st.session_state.refined_results = []
+    
     # Sidebar
     with st.sidebar:
         st.header("IR Model Selection")
@@ -645,11 +677,23 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
         st.metric("Total Documents", idx_stats['num_documents'])
         st.metric("Total Postings", idx_stats['total_postings'])
         st.metric("Avg Doc Length", f"{idx_stats['avg_doc_length']:.1f} terms")
+        
+        st.markdown("---")
+        st.subheader("Rocchio Feedback Status")
+        st.info(f"✅ Relevant: {len(st.session_state.relevant_docs)}")
+        st.info(f"❌ Non-relevant: {len(st.session_state.non_relevant_docs)}")
+        
+        if st.button("Clear All Feedback"):
+            st.session_state.relevant_docs = []
+            st.session_state.non_relevant_docs = []
+            st.session_state.show_refined = False
+            st.session_state.refined_results = []
+            st.rerun()
     
-    # Main area
-    tabs = st.tabs(["Search"])
+    # Main area with tabs
+    tab1, tab2 = st.tabs(["🔍 Search", "🔄 Relevance Feedback"])
     
-    with tabs[0]:  # Access the first tab from the list
+    with tab1:
         st.subheader("Search Interface")
         
         col1, col2 = st.columns([4, 1])
@@ -663,7 +707,7 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
         with col2:
             search_btn = st.button("🔍 Search", type="primary", use_container_width=True)
         
-        # Show example queries for words not in dataset
+        # Show example queries
         with st.expander("💡 Try queries with terms NOT in the dataset"):
             st.write("The system handles out-of-vocabulary words through query expansion:")
             example_cols = st.columns(4)
@@ -674,9 +718,16 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
                     search_btn = True
         
         if search_btn and query:
-            # Show what happens with the query
+            # Store query
+            st.session_state.current_query = query
+            
+            # Reset feedback states
+            st.session_state.show_refined = False
+            st.session_state.refined_results = []
+            
             st.markdown("---")
             
+            # Perform search
             if use_expansion:
                 results = ir_system.search_with_expansion(query, top_n=top_k, method=retrieval_method)
                 stats = ir_system.get_retrieval_stats()
@@ -697,6 +748,7 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
                     results = ir_system.search_vector_space(query, top_n=top_k)
                 stats = None
             
+            # Show preprocessing pipeline
             if show_preprocessing and stats:
                 st.subheader("🔧 IR Processing Pipeline")
                 
@@ -704,41 +756,177 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
                 with col1:
                     st.markdown("**1️⃣ Query Expansion**")
                     st.code(f"Original:\n{stats['original_query']}", language="text")
-                    st.code(f"Expanded:\n{stats['expanded_query']}", language="text")
+                    if stats['expanded_query'] != stats['original_query']:
+                        st.code(f"Expanded:\n{stats['expanded_query']}", language="text")
+                        st.success("✅ Query expanded with synonyms")
+                    else:
+                        st.info("ℹ️ No synonyms found")
                 
                 with col2:
                     st.markdown("**2️⃣ Preprocessing**")
                     prep = stats.get('preprocessing_steps', {})
-                    st.metric("Input Tokens", prep.get('original_tokens', 0))
+                    st.metric("Original Tokens", prep.get('original_tokens', 0))
                     st.metric("After Stopwords", prep.get('after_stopwords', 0))
                     st.metric("After Lemmatization", prep.get('after_lemmatization', 0))
                 
                 with col3:
                     st.markdown("**3️⃣ Retrieval**")
-                    st.metric("Model Used", stats['retrieval_model'])
+                    st.metric("Model", stats['retrieval_model'])
                     st.metric("Results Found", stats['num_results'])
+                    st.metric("Similarity", "Cosine")
             
             st.markdown("---")
             st.subheader(f"📋 Search Results ({len(results)} documents)")
             
             if not results:
-                st.warning("⚠️ No matching documents found. Suggestions:")
+                st.warning("⚠️ No matching documents found.")
+                st.write("**Suggestions:**")
                 st.write("- Enable **Query Expansion** to find semantically related documents")
-                st.write("- Try broader terms like 'health', 'mental', 'help'")
-                st.write("- Use **Boolean operators**: 'term1 AND term2', 'term1 OR term2'")
+                st.write("- Try broader terms")
+                st.write("- Use **Rocchio Feedback** by marking documents as relevant/non-relevant")
             else:
+                # Store results
+                st.session_state.current_results = results
+                
                 for rank, (idx, score, q_text, a_text) in enumerate(results, start=1):
-                    with st.expander(f"**{rank}. {q_text}** | Relevance Score: {score:.4f}", expanded=(rank==1)):
+                    with st.expander(f"**{rank}. {q_text}** | Score: {score:.4f}", expanded=(rank==1)):
                         st.markdown(f"**Answer:**")
                         st.write(a_text)
                         
+                        # Show scoring explanation
                         if show_explanation and retrieval_method == 'vector':
                             terms = ir_system.explain_scoring(query, idx, top_k_terms=5)
                             if terms:
                                 st.markdown("---")
-                                st.markdown("**🎯 Why this document matched (TF-IDF overlap):**")
-                                term_df = pd.DataFrame(terms, columns=["Matching Term", "Relevance Score"])
+                                st.markdown("**🎯 TF-IDF Overlap (Why this matched):**")
+                                term_df = pd.DataFrame(terms, columns=["Term", "TF-IDF Score"])
                                 st.dataframe(term_df, hide_index=True, use_container_width=True)
+    
+    # Relevance Feedback Tab
+    with tab2:
+        st.subheader("Rocchio Relevance Feedback")
+        st.info("""
+        **How it works:** 
+        1. Perform a search in the Search tab
+        2. Mark documents as relevant (👍) or not relevant (👎)
+        3. Click "Apply Rocchio Algorithm" to refine your search
+        
+        The system will adjust your query using: Q_new = αQ + β(Relevant Docs) - γ(Non-Relevant Docs)
+        """)
+        
+        # Check if search has been performed
+        if not st.session_state.current_query:
+            st.warning("⚠️ Please perform a search first in the Search tab.")
+        elif not st.session_state.current_results:
+            st.warning("⚠️ No search results available. Please search first.")
+        else:
+            st.markdown(f"**Current Query:** `{st.session_state.current_query}`")
+            st.markdown("---")
+            
+            st.subheader("📋 Mark Documents for Feedback")
+            
+            # Display results with feedback checkboxes
+            for rank, (idx, score, q_text, a_text) in enumerate(st.session_state.current_results, start=1):
+                col1, col2, col3 = st.columns([6, 1, 1])
+                
+                with col1:
+                    st.markdown(f"**{rank}. {q_text}**")
+                    with st.expander("View Answer"):
+                        st.write(a_text)
+                    st.caption(f"Relevance Score: {score:.4f}")
+                
+                with col2:
+                    # Check if already marked
+                    is_relevant = idx in st.session_state.relevant_docs
+                    if st.checkbox("👍 Relevant", key=f"rel_{idx}", value=is_relevant):
+                        if idx not in st.session_state.relevant_docs:
+                            st.session_state.relevant_docs.append(idx)
+                        if idx in st.session_state.non_relevant_docs:
+                            st.session_state.non_relevant_docs.remove(idx)
+                    else:
+                        if idx in st.session_state.relevant_docs:
+                            st.session_state.relevant_docs.remove(idx)
+                
+                with col3:
+                    # Check if already marked
+                    is_non_relevant = idx in st.session_state.non_relevant_docs
+                    if st.checkbox("👎 Not Relevant", key=f"nonrel_{idx}", value=is_non_relevant):
+                        if idx not in st.session_state.non_relevant_docs:
+                            st.session_state.non_relevant_docs.append(idx)
+                        if idx in st.session_state.relevant_docs:
+                            st.session_state.relevant_docs.remove(idx)
+                    else:
+                        if idx in st.session_state.non_relevant_docs:
+                            st.session_state.non_relevant_docs.remove(idx)
+                
+                st.markdown("---")
+            
+            # Apply Rocchio button
+            st.markdown("### Apply Feedback")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Marked Relevant", len(st.session_state.relevant_docs))
+            with col2:
+                st.metric("Marked Non-Relevant", len(st.session_state.non_relevant_docs))
+            
+            if st.session_state.relevant_docs or st.session_state.non_relevant_docs:
+                if st.button("🔄 Apply Rocchio Algorithm", type="primary", use_container_width=True):
+                    with st.spinner("Applying Rocchio algorithm to refine results..."):
+                        # Apply Rocchio
+                        refined_results = ir_system.search_with_rocchio(
+                            st.session_state.current_query,
+                            st.session_state.relevant_docs,
+                            st.session_state.non_relevant_docs,
+                            top_n=top_k
+                        )
+                        
+                        st.session_state.refined_results = refined_results
+                        st.session_state.show_refined = True
+                    
+                    st.success("✅ Rocchio algorithm applied successfully!")
+                    st.balloons()
+            else:
+                st.warning("⚠️ Please mark at least one document as relevant or non-relevant.")
+            
+            # Show refined results
+            if st.session_state.show_refined and st.session_state.refined_results:
+                st.markdown("---")
+                st.subheader("🎯 Refined Search Results")
+                st.success(f"Query refined using {len(st.session_state.relevant_docs)} relevant and {len(st.session_state.non_relevant_docs)} non-relevant documents")
+                
+                for rank, (idx, score, q_text, a_text) in enumerate(st.session_state.refined_results, start=1):
+                    # Check if this is a new result
+                    original_indices = [r[0] for r in st.session_state.current_results]
+                    is_new = idx not in original_indices
+                    
+                    with st.expander(
+                        f"{'🆕 ' if is_new else ''}{rank}. {q_text} | Score: {score:.4f}",
+                        expanded=(rank <= 3)
+                    ):
+                        if is_new:
+                            st.info("🆕 This is a new result found through feedback!")
+                        st.markdown("**Answer:**")
+                        st.write(a_text)
+                        
+                        # Show TF-IDF explanation
+                        if show_explanation:
+                            terms = ir_system.explain_scoring(st.session_state.current_query, idx, top_k_terms=5)
+                            if terms:
+                                st.markdown("---")
+                                st.markdown("**🎯 TF-IDF Overlap:**")
+                                term_df = pd.DataFrame(terms, columns=["Term", "TF-IDF Score"])
+                                st.dataframe(term_df, hide_index=True, use_container_width=True)
+                
+                # Option to start new search
+                if st.button("🔄 Start New Search", use_container_width=True):
+                    st.session_state.current_query = ""
+                    st.session_state.current_results = []
+                    st.session_state.relevant_docs = []
+                    st.session_state.non_relevant_docs = []
+                    st.session_state.show_refined = False
+                    st.session_state.refined_results = []
+                    st.rerun()
 
 # --------------------------- Main ------------------------------------
 
