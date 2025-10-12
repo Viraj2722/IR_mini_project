@@ -1,5 +1,5 @@
 """
-Comprehensive FAQ IR System - Syllabus-Aligned Implementation
+Comprehensive FAQ IR System 
 File: comprehensive_faq_ir_system.py
 
 Implemented IR Concepts from Syllabus:
@@ -613,7 +613,7 @@ def run_streamlit_app(ir_system: ComprehensiveFAQIR):
     
     st.set_page_config(page_title="IR System - Syllabus Implementation", layout="wide")
     
-    st.title("Information Retrieval System - Syllabus Concepts")
+    st.title("FAQ Information Retrieval System")
     st.markdown("""
     **Implemented Concepts:** Vector Space Model, Boolean Model, Inverted Index, 
     Zone Indexing, Query Expansion, Rocchio Feedback, TF-IDF, Evaluation Metrics
